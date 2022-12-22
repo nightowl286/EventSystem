@@ -12,6 +12,9 @@
     <Company>TNO</Company>
     <IncludeSymbols>True</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <Title>Event System - Abstractions</Title>
+    <PackageTags>event system, events, abstractions</PackageTags>
+    <Description>A package that provides the abstractions for the event system.</Description>
   </PropertyGroup>
 
 </Project>

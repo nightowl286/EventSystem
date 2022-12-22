@@ -5,7 +5,7 @@
   </ItemGroup>
 
   <PropertyGroup>
-    <TargetFramework>net6.0</TargetFramework>
+    <TargetFramework>net7.0</TargetFramework>
     <LangVersion>11</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -17,6 +17,9 @@
     <Company>TNO</Company>
     <IncludeSymbols>True</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <Title>Event System</Title>
+    <Description>A package that provides the implementations that allows for publishing and receiving global/scoped events.</Description>
+    <PackageTags>event system, events</PackageTags>
   </PropertyGroup>
 
 </Project>
