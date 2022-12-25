@@ -8,6 +8,9 @@ namespace TNO.EventSystem
 {
    // Todo(Nightowl): Upgrade the locking mechanism to use a Read/Write lock instead;
 
+   /// <summary>
+   /// A facade that encompasses an event system.
+   /// </summary>
    public class EventSystemFacade : IEventSystem
    {
       #region Fields
@@ -16,6 +19,7 @@ namespace TNO.EventSystem
 
       #region Methods
       #region Subscribe
+      /// <inheritdoc/>
       public bool Subscribe<T>(IEventHandler<T> handler) where T : notnull
       {
          lock (_subscriptions)
@@ -27,6 +31,8 @@ namespace TNO.EventSystem
             return true;
          }
       }
+
+      /// <inheritdoc/>
       public bool Subscribe<T>(Func<T, Task> action) where T : notnull
       {
          lock (_subscriptions)
@@ -38,6 +44,8 @@ namespace TNO.EventSystem
             return true;
          }
       }
+
+      /// <inheritdoc/>
       public bool SubscribeAll(object subscriber)
       {
          lock (_subscriptions)
@@ -63,6 +71,7 @@ namespace TNO.EventSystem
       }
       #endregion
       #region Unsubscribe
+      /// <inheritdoc/>
       public bool Unsubscribe<T>(IEventHandler<T> subscriber) where T : notnull
       {
          lock (_subscriptions)
@@ -78,6 +87,8 @@ namespace TNO.EventSystem
             return false;
          }
       }
+
+      /// <inheritdoc/>
       public bool Unsubscribe<T>(Func<T, Task> action) where T : notnull
       {
          lock (_subscriptions)
@@ -93,6 +104,7 @@ namespace TNO.EventSystem
             return false;
          }
       }
+      /// <inheritdoc/>
       public bool UnsubscribeAll(object subscriber)
       {
          lock (_subscriptions)
@@ -118,6 +130,7 @@ namespace TNO.EventSystem
       }
       #endregion
       #region Is Subscribed
+      /// <inheritdoc/>
       public bool IsSubscribed<T>(IEventHandler<T> subscriber) where T : notnull
       {
          lock (_subscriptions)
@@ -131,6 +144,8 @@ namespace TNO.EventSystem
             return false;
          }
       }
+
+      /// <inheritdoc/>
       public bool IsSubscribed<T>(Func<T, Task> action) where T : notnull
       {
          lock (_subscriptions)
@@ -144,6 +159,8 @@ namespace TNO.EventSystem
             return false;
          }
       }
+
+      /// <inheritdoc/>
       public bool IsSubscribedForAny(object subscriber)
       {
          lock (_subscriptions)
@@ -160,7 +177,9 @@ namespace TNO.EventSystem
             return false;
          }
       }
-      public bool IsSubscribedForEvent<T>() where T : notnull
+
+      /// <inheritdoc/>
+      public bool AnySubscribersForEvent<T>() where T : notnull
       {
          lock (_subscriptions)
          {
@@ -177,6 +196,8 @@ namespace TNO.EventSystem
          }
       }
       #endregion
+
+      /// <inheritdoc/>
       public async Task<bool> PublishAsync<T>(T eventData, CancellationToken cancellationToken = default) where T : notnull
       {
          List<Task<bool>> tasks = new List<Task<bool>>();
@@ -202,6 +223,8 @@ namespace TNO.EventSystem
 
          return false;
       }
+
+      /// <inheritdoc/>
       public void Cleanup()
       {
          lock (_subscriptions)
@@ -233,15 +256,6 @@ namespace TNO.EventSystem
       #endregion
 
       #region Helpers
-      private SubscriptionBase CreateSubscription(object subscriber, Type eventType)
-      {
-         // Todo(Nightowl): This can be sped-up with expression trees;
-         Type genericType = typeof(InstanceSubscription<>).MakeGenericType(eventType);
-         object? instance = Activator.CreateInstance(genericType, args: subscriber);
-         Debug.Assert(instance is not null);
-
-         return (SubscriptionBase)instance;
-      }
       private void AddSubscription(Type type, SubscriptionBase subscription)
       {
          if (_subscriptions.TryGetValue(type, out List<SubscriptionBase>? subscriptions) == false)
@@ -305,6 +319,15 @@ namespace TNO.EventSystem
             foreach (SubscriptionBase subscription in subscriptions)
                yield return subscription;
          }
+      }
+      private static SubscriptionBase CreateSubscription(object subscriber, Type eventType)
+      {
+         // Todo(Nightowl): This can be sped-up with expression trees;
+         Type genericType = typeof(InstanceSubscription<>).MakeGenericType(eventType);
+         object? instance = Activator.CreateInstance(genericType, args: subscriber);
+         Debug.Assert(instance is not null);
+
+         return (SubscriptionBase)instance;
       }
       #endregion
    }

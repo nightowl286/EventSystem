@@ -2,6 +2,8 @@
 using TNO.EventSystem.Abstractions;
 using TNO.Tests.Moq;
 
+#pragma warning disable IDE1006 // Async Suffix isn't needed for test methods.
+
 namespace TNO.EventSystem.Tests
 {
    [TestClass]
@@ -381,7 +383,7 @@ namespace TNO.EventSystem.Tests
       }
 
       [TestMethod]
-      public void IsSubscribedForEvent_HandlerSubscribed_ReturnsTrue()
+      public void AnySubscribersForEvent_HandlerSubscribed_ReturnsTrue()
       {
          // Arrange
          Mock<IEventHandler<object>> handlerMock = new Mock<IEventHandler<object>>();
@@ -393,14 +395,14 @@ namespace TNO.EventSystem.Tests
          Assert.That.IsInconclusiveIfNot(_sut.IsSubscribed(handler));
 
          // Act
-         bool result = _sut.IsSubscribedForEvent<object>();
+         bool result = _sut.AnySubscribersForEvent<object>();
 
          // Assert
          Assert.IsTrue(result);
       }
 
       [TestMethod]
-      public void IsSubscribedForEvent_HandlerNotSubscribed_ReturnsTrue()
+      public void AnySubscribersForEvent_HandlerNotSubscribed_ReturnsTrue()
       {
          // Arrange
          Mock<IEventHandler<object>> handlerMock = new Mock<IEventHandler<object>>();
@@ -410,7 +412,7 @@ namespace TNO.EventSystem.Tests
          Assert.That.IsInconclusiveIf(_sut.IsSubscribed(handler));
 
          // Act
-         bool result = _sut.IsSubscribedForEvent<object>();
+         bool result = _sut.AnySubscribersForEvent<object>();
 
          // Assert
          Assert.IsFalse(result);
@@ -421,7 +423,7 @@ namespace TNO.EventSystem.Tests
       public async Task PublishAsync_NoHandlers_ReturnsFalse()
       {
          // Pre-Act Assert
-         Assert.That.IsInconclusiveIf(_sut.IsSubscribedForEvent<object>());
+         Assert.That.IsInconclusiveIf(_sut.AnySubscribersForEvent<object>());
 
          // Act
          bool result = await _sut.PublishAsync(new object());
@@ -512,7 +514,7 @@ namespace TNO.EventSystem.Tests
       #endregion
 
       #region Methods
-      private Mock<IEventHandler<object>> CreateMultiHandlerMock(out IEventHandler<int> intHandler)
+      private static Mock<IEventHandler<object>> CreateMultiHandlerMock(out IEventHandler<int> intHandler)
       {
          Mock<IEventHandler<int>> intMock = new Mock<IEventHandler<int>>();
          Mock<IEventHandler<object>> objectMock = intMock.As<IEventHandler<object>>();
@@ -526,3 +528,5 @@ namespace TNO.EventSystem.Tests
       #endregion
    }
 }
+
+#pragma warning restore IDE1006
