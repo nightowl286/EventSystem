@@ -451,6 +451,64 @@ namespace TNO.EventSystem.Tests
          mockHandler.VerifyOnce(m => m.HandleAsync(It.IsAny<object>(), It.IsAny<CancellationToken>()));
          mockHandler.VerifyNoOtherCalls();
       }
+
+      [TestMethod]
+      public async Task PublishAsync_WithHandlerAndCancelledToken_ReturnsFalse()
+      {
+         // Arrange
+         Mock<IEventHandler<object>> mockHandler = new Mock<IEventHandler<object>>();
+         mockHandler.Setup(m => m.HandleAsync(It.IsAny<object>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+         IEventHandler<object> handler = mockHandler.Object;
+
+         CancellationTokenSource tokenSource = new CancellationTokenSource();
+         tokenSource.Cancel();
+
+         _sut.Subscribe(handler);
+
+         // Arrange Assert
+         Assert.That.IsInconclusiveIfNot(_sut.IsSubscribed(handler));
+         Assert.That.IsInconclusiveIfNot(tokenSource.IsCancellationRequested);
+
+         // Act
+         bool result = await _sut.PublishAsync(new object(), tokenSource.Token);
+
+         // Assert
+         Assert.IsFalse(result);
+         mockHandler.VerifyNever(m => m.HandleAsync(It.IsAny<object>(), It.IsAny<CancellationToken>()));
+         mockHandler.VerifyNoOtherCalls();
+      }
+
+      [TestMethod]
+      public async Task PublichAsync_WithMultipleHandlers_AllHandled()
+      {
+         // Arrange
+         Mock<IEventHandler<object>> mockHandlerA = new Mock<IEventHandler<object>>();
+         Mock<IEventHandler<object>> mockHandlerB = new Mock<IEventHandler<object>>();
+
+         mockHandlerA.Setup(m => m.HandleAsync(It.IsAny<object>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+         mockHandlerB.Setup(m => m.HandleAsync(It.IsAny<object>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+         IEventHandler<object> handlerA = mockHandlerA.Object;
+         IEventHandler<object> handlerB = mockHandlerB.Object;
+
+         _sut.Subscribe(handlerA);
+         _sut.Subscribe(handlerB);
+
+         // Arrange Assert
+         Assert.That.IsInconclusiveIfNot(_sut.IsSubscribed(handlerA));
+         Assert.That.IsInconclusiveIfNot(_sut.IsSubscribed(handlerB));
+
+         // Act
+         bool result = await _sut.PublishAsync(new object());
+
+         // Assert
+         Assert.IsTrue(result);
+
+         mockHandlerA.VerifyOnce(m => m.HandleAsync(It.IsAny<object>(), It.IsAny<CancellationToken>()));
+         mockHandlerB.VerifyOnce(m => m.HandleAsync(It.IsAny<object>(), It.IsAny<CancellationToken>()));
+
+         Assert.That.NoOtherCalls(mockHandlerA, mockHandlerB);
+      }
       #endregion
 
       #region Methods
