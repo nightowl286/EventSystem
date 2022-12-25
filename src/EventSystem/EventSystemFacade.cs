@@ -6,6 +6,8 @@ using TNO.EventSystem.Registrations;
 
 namespace TNO.EventSystem
 {
+   // Todo(Nightowl): Upgrade the locking mechanism to use a Read/Write lock instead;
+
    public class EventSystemFacade : IEventSystem
    {
       #region Fields
@@ -16,134 +18,181 @@ namespace TNO.EventSystem
       #region Subscribe
       public bool Subscribe<T>(IEventHandler<T> handler) where T : notnull
       {
-         if (TryGetSubscription<T>(handler, out _))
-            return false;
+         lock (_subscriptions)
+         {
+            if (TryGetSubscription<T>(handler, out _))
+               return false;
 
-         AddSubscription(typeof(T), new InstanceSubscription<T>(handler));
-         return true;
+            AddSubscription(typeof(T), new InstanceSubscription<T>(handler));
+            return true;
+         }
       }
       public bool Subscribe<T>(Func<T, Task> action) where T : notnull
       {
-         if (TryGetSubscription<T>(action, out _))
-            return false;
+         lock (_subscriptions)
+         {
+            if (TryGetSubscription<T>(action, out _))
+               return false;
 
-         AddSubscription(typeof(T), new DelegateSubscription<T>(action));
-         return true;
+            AddSubscription(typeof(T), new DelegateSubscription<T>(action));
+            return true;
+         }
       }
       public bool SubscribeAll(object subscriber)
       {
-         Type type = subscriber.GetType();
-         IEnumerable<Type> implementedHandlers = type.GetOpenInterfaceImplementations(typeof(IEventHandler<>));
-
-         bool subscribed = false;
-         foreach (Type handlerType in implementedHandlers)
+         lock (_subscriptions)
          {
-            Type eventDataType = handlerType.GetGenericArguments()[0];
-            if (TryGetSubscription(eventDataType, subscriber, out _) == false)
+            Type type = subscriber.GetType();
+            IEnumerable<Type> implementedHandlers = type.GetOpenInterfaceImplementations(typeof(IEventHandler<>));
+
+            bool subscribed = false;
+            foreach (Type handlerType in implementedHandlers)
             {
-               SubscriptionBase subscription = CreateSubscription(subscriber, eventDataType);
-               AddSubscription(eventDataType, subscription);
+               Type eventDataType = handlerType.GetGenericArguments()[0];
+               if (TryGetSubscription(eventDataType, subscriber, out _) == false)
+               {
+                  SubscriptionBase subscription = CreateSubscription(subscriber, eventDataType);
+                  AddSubscription(eventDataType, subscription);
 
-               subscribed = true;
+                  subscribed = true;
+               }
             }
-         }
 
-         return subscribed;
+            return subscribed;
+         }
       }
       #endregion
       #region Unsubscribe
       public bool Unsubscribe<T>(IEventHandler<T> subscriber) where T : notnull
       {
-         if (TryGetSubscription(subscriber, out SubscriptionBase<T>? subscription))
+         lock (_subscriptions)
          {
-            Debug.Assert(_subscriptions.ContainsKey(typeof(T)));
-            RemoveSubscription(typeof(T), subscription);
+            if (TryGetSubscription(subscriber, out SubscriptionBase<T>? subscription))
+            {
+               Debug.Assert(_subscriptions.ContainsKey(typeof(T)));
+               RemoveSubscription(typeof(T), subscription);
 
-            return true;
+               return true;
+            }
+
+            return false;
          }
-
-         return false;
       }
       public bool Unsubscribe<T>(Func<T, Task> action) where T : notnull
       {
-         if (TryGetSubscription(action, out SubscriptionBase<T>? subscription))
+         lock (_subscriptions)
          {
-            Debug.Assert(_subscriptions.ContainsKey(typeof(T)));
-            RemoveSubscription(typeof(T), subscription);
+            if (TryGetSubscription(action, out SubscriptionBase<T>? subscription))
+            {
+               Debug.Assert(_subscriptions.ContainsKey(typeof(T)));
+               RemoveSubscription(typeof(T), subscription);
 
-            return true;
+               return true;
+            }
+
+            return false;
          }
-
-         return false;
       }
       public bool UnsubscribeAll(object subscriber)
       {
-         Dictionary<Type, SubscriptionBase> toRemove = new Dictionary<Type, SubscriptionBase>();
-         foreach (KeyValuePair<Type, List<SubscriptionBase>> pair in _subscriptions)
+         lock (_subscriptions)
          {
-            foreach (SubscriptionBase subscription in pair.Value)
+            Dictionary<Type, SubscriptionBase> toRemove = new Dictionary<Type, SubscriptionBase>();
+            foreach (KeyValuePair<Type, List<SubscriptionBase>> pair in _subscriptions)
             {
-               if (subscription.Matches(subscriber))
+               foreach (SubscriptionBase subscription in pair.Value)
                {
-                  toRemove.Add(pair.Key, subscription);
-                  break;
+                  if (subscription.Matches(subscriber))
+                  {
+                     toRemove.Add(pair.Key, subscription);
+                     break;
+                  }
                }
             }
+
+            foreach (KeyValuePair<Type, SubscriptionBase> pair in toRemove)
+               RemoveSubscription(pair.Key, pair.Value);
+
+            return toRemove.Count > 0;
          }
-
-         foreach (KeyValuePair<Type, SubscriptionBase> pair in toRemove)
-            RemoveSubscription(pair.Key, pair.Value);
-
-         return toRemove.Count > 0;
       }
       #endregion
       #region Is Subscribed
       public bool IsSubscribed<T>(IEventHandler<T> subscriber) where T : notnull
       {
-         if (TryGetSubscription(subscriber, out SubscriptionBase<T>? subscription))
+         lock (_subscriptions)
          {
-            Debug.Assert(subscription is InstanceSubscription<T>);
-            return true;
-         }
+            if (TryGetSubscription(subscriber, out SubscriptionBase<T>? subscription))
+            {
+               Debug.Assert(subscription is InstanceSubscription<T>);
+               return !subscription.CanBeRemoved;
+            }
 
-         return false;
+            return false;
+         }
       }
       public bool IsSubscribed<T>(Func<T, Task> action) where T : notnull
       {
-         if (TryGetSubscription(action, out SubscriptionBase<T>? subscription))
+         lock (_subscriptions)
          {
-            Debug.Assert(subscription is DelegateSubscription<T>);
-            return true;
-         }
+            if (TryGetSubscription(action, out SubscriptionBase<T>? subscription))
+            {
+               Debug.Assert(subscription is DelegateSubscription<T>);
+               return !subscription.CanBeRemoved;
+            }
 
-         return false;
+            return false;
+         }
       }
       public bool IsSubscribedForAny(object subscriber)
       {
-         foreach (List<SubscriptionBase> subscriptions in _subscriptions.Values)
+         lock (_subscriptions)
          {
-            foreach (SubscriptionBase subscription in subscriptions)
+            foreach (List<SubscriptionBase> subscriptions in _subscriptions.Values)
             {
-               if (subscription.Matches(subscriber))
-                  return true;
+               foreach (SubscriptionBase subscription in subscriptions)
+               {
+                  if (subscription.Matches(subscriber) && !subscription.CanBeRemoved)
+                     return true;
+               }
             }
-         }
 
-         return false;
+            return false;
+         }
+      }
+      public bool IsSubscribedForEvent<T>() where T : notnull
+      {
+         lock (_subscriptions)
+         {
+            if (_subscriptions.TryGetValue(typeof(T), out List<SubscriptionBase>? subscriptions))
+            {
+               foreach (SubscriptionBase subscription in subscriptions)
+               {
+                  if (subscription.CanBeRemoved == false)
+                     return true;
+               }
+            }
+
+            return false;
+         }
       }
       #endregion
       public async Task<bool> PublishAsync<T>(T eventData, CancellationToken cancellationToken = default) where T : notnull
       {
          List<Task<bool>> tasks = new List<Task<bool>>();
-         foreach (SubscriptionBase<T> subscription in GetSubscriptions<T>())
+         lock (_subscriptions)
          {
-            if (cancellationToken.IsCancellationRequested)
-               break;
+            foreach (SubscriptionBase<T> subscription in GetSubscriptions<T>())
+            {
+               if (cancellationToken.IsCancellationRequested)
+                  break;
 
-            tasks.Add(subscription.PublishAsync(eventData, cancellationToken));
+               tasks.Add(subscription.PublishAsync(eventData, cancellationToken));
+            }
          }
 
          bool[] results = await Task.WhenAll(tasks);
+         Cleanup();
 
          foreach (bool result in results)
          {
@@ -152,6 +201,34 @@ namespace TNO.EventSystem
          }
 
          return false;
+      }
+      public void Cleanup()
+      {
+         lock (_subscriptions)
+         {
+            Dictionary<Type, List<SubscriptionBase>> toRemove = new Dictionary<Type, List<SubscriptionBase>>();
+            foreach (KeyValuePair<Type, List<SubscriptionBase>> pair in _subscriptions)
+            {
+               List<SubscriptionBase>? removeForType = null;
+               foreach (SubscriptionBase subscription in pair.Value)
+               {
+                  if (subscription.CanBeRemoved)
+                  {
+                     removeForType ??= new List<SubscriptionBase>();
+                     removeForType.Add(subscription);
+                  }
+               }
+
+               if (removeForType is not null)
+                  toRemove.Add(pair.Key, removeForType);
+            }
+
+            foreach (KeyValuePair<Type, List<SubscriptionBase>> pair in toRemove)
+            {
+               foreach (SubscriptionBase subscription in pair.Value)
+                  RemoveSubscription(pair.Key, subscription);
+            }
+         }
       }
       #endregion
 

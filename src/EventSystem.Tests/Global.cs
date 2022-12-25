@@ -1,4 +1,5 @@
 ﻿global using Microsoft.VisualStudio.TestTools.UnitTesting;
+global using TNO.Tests.Common;
 
 #if DEBUG
 [assembly: Parallelize(Scope = ExecutionScope.ClassLevel, Workers = 1)]
@@ -8,5 +9,5 @@
 
 internal static class Category
 {
-
+   public const string EventSystem = "Event System";
 }

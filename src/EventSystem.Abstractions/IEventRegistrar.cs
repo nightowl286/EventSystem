@@ -17,6 +17,8 @@ namespace TNO.EventSystem.Abstractions
       bool IsSubscribedForAny(object subscriber);
       bool IsSubscribed<T>(IEventHandler<T> subscriber) where T : notnull;
       bool IsSubscribed<T>(Func<T, Task> action) where T : notnull;
+
+      bool IsSubscribedForEvent<T>() where T : notnull;
       #endregion
    }
 }
