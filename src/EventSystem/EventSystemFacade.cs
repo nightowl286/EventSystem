@@ -6,14 +6,13 @@ using TNO.EventSystem.Registrations;
 
 namespace TNO.EventSystem
 {
-   // Todo(Nightowl): Upgrade the locking mechanism to use a Read/Write lock instead;
-
    /// <summary>
    /// A facade that encompasses an event system.
    /// </summary>
    public class EventSystemFacade : IEventSystem
    {
       #region Fields
+      private readonly ReaderWriterLockSlim _subscriptionsLock = new ReaderWriterLockSlim();
       private readonly Dictionary<Type, List<SubscriptionBase>> _subscriptions = new Dictionary<Type, List<SubscriptionBase>>();
       #endregion
 
@@ -22,51 +21,65 @@ namespace TNO.EventSystem
       /// <inheritdoc/>
       public bool Subscribe<T>(IEventHandler<T> handler) where T : notnull
       {
-         lock (_subscriptions)
+         _subscriptionsLock.EnterUpgradeableReadLock();
+         try
          {
             if (TryGetSubscription<T>(handler, out _))
                return false;
 
-            AddSubscription(typeof(T), new InstanceSubscription<T>(handler));
+            AddSubscription(typeof(T), new InstanceSubscription<T>(handler), true);
             return true;
+         }
+         finally
+         {
+            _subscriptionsLock.ExitUpgradeableReadLock();
          }
       }
 
       /// <inheritdoc/>
       public bool Subscribe<T>(Func<T, Task> action) where T : notnull
       {
-         lock (_subscriptions)
+         _subscriptionsLock.EnterUpgradeableReadLock();
+         try
          {
             if (TryGetSubscription<T>(action, out _))
                return false;
 
-            AddSubscription(typeof(T), new DelegateSubscription<T>(action));
+            AddSubscription(typeof(T), new DelegateSubscription<T>(action), true);
             return true;
+         }
+         finally
+         {
+            _subscriptionsLock.ExitUpgradeableReadLock();
          }
       }
 
       /// <inheritdoc/>
       public bool SubscribeAll(object subscriber)
       {
-         lock (_subscriptions)
+         _subscriptionsLock.EnterWriteLock();
+         try
          {
             Type type = subscriber.GetType();
             IEnumerable<Type> implementedHandlers = type.GetOpenInterfaceImplementations(typeof(IEventHandler<>));
-
             bool subscribed = false;
+
             foreach (Type handlerType in implementedHandlers)
             {
                Type eventDataType = handlerType.GetGenericArguments()[0];
                if (TryGetSubscription(eventDataType, subscriber, out _) == false)
                {
                   SubscriptionBase subscription = CreateSubscription(subscriber, eventDataType);
-                  AddSubscription(eventDataType, subscription);
+                  AddSubscription(eventDataType, subscription, false);
 
                   subscribed = true;
                }
             }
-
             return subscribed;
+         }
+         finally
+         {
+            _subscriptionsLock.ExitWriteLock();
          }
       }
       #endregion
@@ -74,40 +87,67 @@ namespace TNO.EventSystem
       /// <inheritdoc/>
       public bool Unsubscribe<T>(IEventHandler<T> subscriber) where T : notnull
       {
-         lock (_subscriptions)
+         _subscriptionsLock.EnterUpgradeableReadLock();
+         try
          {
             if (TryGetSubscription(subscriber, out SubscriptionBase<T>? subscription))
             {
-               Debug.Assert(_subscriptions.ContainsKey(typeof(T)));
-               RemoveSubscription(typeof(T), subscription);
+               _subscriptionsLock.EnterWriteLock();
+               try
+               {
+                  Debug.Assert(_subscriptions.ContainsKey(typeof(T)));
+                  RemoveSubscription(typeof(T), subscription);
+               }
+               finally
+               {
+                  _subscriptionsLock.ExitWriteLock();
+               }
 
                return true;
             }
 
             return false;
+         }
+         finally
+         {
+            _subscriptionsLock.ExitUpgradeableReadLock();
          }
       }
 
       /// <inheritdoc/>
       public bool Unsubscribe<T>(Func<T, Task> action) where T : notnull
       {
-         lock (_subscriptions)
+         _subscriptionsLock.EnterUpgradeableReadLock();
+         try
          {
             if (TryGetSubscription(action, out SubscriptionBase<T>? subscription))
             {
-               Debug.Assert(_subscriptions.ContainsKey(typeof(T)));
-               RemoveSubscription(typeof(T), subscription);
+               _subscriptionsLock.EnterWriteLock();
+               try
+               {
+                  Debug.Assert(_subscriptions.ContainsKey(typeof(T)));
+                  RemoveSubscription(typeof(T), subscription);
+               }
+               finally
+               {
+                  _subscriptionsLock.ExitWriteLock();
+               }
 
                return true;
             }
 
             return false;
          }
+         finally
+         {
+            _subscriptionsLock.ExitUpgradeableReadLock();
+         }
       }
       /// <inheritdoc/>
       public bool UnsubscribeAll(object subscriber)
       {
-         lock (_subscriptions)
+         _subscriptionsLock.EnterUpgradeableReadLock();
+         try
          {
             Dictionary<Type, SubscriptionBase> toRemove = new Dictionary<Type, SubscriptionBase>();
             foreach (KeyValuePair<Type, List<SubscriptionBase>> pair in _subscriptions)
@@ -122,10 +162,22 @@ namespace TNO.EventSystem
                }
             }
 
-            foreach (KeyValuePair<Type, SubscriptionBase> pair in toRemove)
-               RemoveSubscription(pair.Key, pair.Value);
+            _subscriptionsLock.EnterWriteLock();
+            try
+            {
+               foreach (KeyValuePair<Type, SubscriptionBase> pair in toRemove)
+                  RemoveSubscription(pair.Key, pair.Value);
+            }
+            finally
+            {
+               _subscriptionsLock.ExitWriteLock();
+            }
 
             return toRemove.Count > 0;
+         }
+         finally
+         {
+            _subscriptionsLock.ExitUpgradeableReadLock();
          }
       }
       #endregion
@@ -133,7 +185,8 @@ namespace TNO.EventSystem
       /// <inheritdoc/>
       public bool IsSubscribed<T>(IEventHandler<T> subscriber) where T : notnull
       {
-         lock (_subscriptions)
+         _subscriptionsLock.EnterReadLock();
+         try
          {
             if (TryGetSubscription(subscriber, out SubscriptionBase<T>? subscription))
             {
@@ -143,12 +196,17 @@ namespace TNO.EventSystem
 
             return false;
          }
+         finally
+         {
+            _subscriptionsLock.ExitReadLock();
+         }
       }
 
       /// <inheritdoc/>
       public bool IsSubscribed<T>(Func<T, Task> action) where T : notnull
       {
-         lock (_subscriptions)
+         _subscriptionsLock.EnterReadLock();
+         try
          {
             if (TryGetSubscription(action, out SubscriptionBase<T>? subscription))
             {
@@ -158,12 +216,17 @@ namespace TNO.EventSystem
 
             return false;
          }
+         finally
+         {
+            _subscriptionsLock.ExitReadLock();
+         }
       }
 
       /// <inheritdoc/>
       public bool IsSubscribedForAny(object subscriber)
       {
-         lock (_subscriptions)
+         _subscriptionsLock.EnterReadLock();
+         try
          {
             foreach (List<SubscriptionBase> subscriptions in _subscriptions.Values)
             {
@@ -176,12 +239,17 @@ namespace TNO.EventSystem
 
             return false;
          }
+         finally
+         {
+            _subscriptionsLock.ExitReadLock();
+         }
       }
 
       /// <inheritdoc/>
       public bool AnySubscribersForEvent<T>() where T : notnull
       {
-         lock (_subscriptions)
+         _subscriptionsLock.EnterReadLock();
+         try
          {
             if (_subscriptions.TryGetValue(typeof(T), out List<SubscriptionBase>? subscriptions))
             {
@@ -194,6 +262,10 @@ namespace TNO.EventSystem
 
             return false;
          }
+         finally
+         {
+            _subscriptionsLock.ExitReadLock();
+         }
       }
       #endregion
 
@@ -201,7 +273,10 @@ namespace TNO.EventSystem
       public async Task<bool> PublishAsync<T>(T eventData, CancellationToken cancellationToken = default) where T : notnull
       {
          List<Task<bool>> tasks = new List<Task<bool>>();
-         lock (_subscriptions)
+         bool[] results;
+
+         _subscriptionsLock.EnterReadLock();
+         try
          {
             foreach (SubscriptionBase<T> subscription in GetSubscriptions<T>())
             {
@@ -210,9 +285,14 @@ namespace TNO.EventSystem
 
                tasks.Add(subscription.PublishAsync(eventData, cancellationToken));
             }
+
+            results = await Task.WhenAll(tasks);
+         }
+         finally
+         {
+            _subscriptionsLock.ExitReadLock();
          }
 
-         bool[] results = await Task.WhenAll(tasks);
          Cleanup();
 
          foreach (bool result in results)
@@ -227,7 +307,8 @@ namespace TNO.EventSystem
       /// <inheritdoc/>
       public void Cleanup()
       {
-         lock (_subscriptions)
+         _subscriptionsLock.EnterUpgradeableReadLock();
+         try
          {
             Dictionary<Type, List<SubscriptionBase>> toRemove = new Dictionary<Type, List<SubscriptionBase>>();
             foreach (KeyValuePair<Type, List<SubscriptionBase>> pair in _subscriptions)
@@ -246,25 +327,48 @@ namespace TNO.EventSystem
                   toRemove.Add(pair.Key, removeForType);
             }
 
-            foreach (KeyValuePair<Type, List<SubscriptionBase>> pair in toRemove)
+            _subscriptionsLock.EnterWriteLock();
+            try
             {
-               foreach (SubscriptionBase subscription in pair.Value)
-                  RemoveSubscription(pair.Key, subscription);
+               foreach (KeyValuePair<Type, List<SubscriptionBase>> pair in toRemove)
+               {
+                  foreach (SubscriptionBase subscription in pair.Value)
+                     RemoveSubscription(pair.Key, subscription);
+               }
             }
+            finally
+            {
+               _subscriptionsLock.ExitWriteLock();
+            }
+         }
+         finally
+         {
+            _subscriptionsLock.ExitUpgradeableReadLock();
          }
       }
       #endregion
 
       #region Helpers
-      private void AddSubscription(Type type, SubscriptionBase subscription)
+      private void AddSubscription(Type type, SubscriptionBase subscription, bool enterLock)
       {
-         if (_subscriptions.TryGetValue(type, out List<SubscriptionBase>? subscriptions) == false)
-         {
-            subscriptions = new List<SubscriptionBase>();
-            _subscriptions.Add(type, subscriptions);
-         }
+         if (enterLock)
+            _subscriptionsLock.EnterWriteLock();
 
-         subscriptions.Add(subscription);
+         try
+         {
+            if (_subscriptions.TryGetValue(type, out List<SubscriptionBase>? subscriptions) == false)
+            {
+               subscriptions = new List<SubscriptionBase>();
+               _subscriptions.Add(type, subscriptions);
+            }
+
+            subscriptions.Add(subscription);
+         }
+         finally
+         {
+            if (enterLock)
+               _subscriptionsLock.ExitWriteLock();
+         }
       }
       private void RemoveSubscription(Type type, SubscriptionBase subscription)
       {
